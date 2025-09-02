@@ -2,7 +2,7 @@
 const int motorPins[3][2] = {
   {2, 3},  // Motor 1 (X-axis): D2=forward, D3=reverse
   {4, 5},  // Motor 2 (Y-axis): D4=forward, D5=reverse
-  {6, 7}   // Motor 3 (Z-axis): D6=UP, D7=DOWN (but logic will be inverted)
+  {6, 7}   // Motor 3 (Z-axis): D6=UP, D7=DOWN
 };
 const int clawPin = 9;          // Solenoid claw
 const int switchDelay = 200;    // Safety delay between direction changes (ms)
@@ -27,7 +27,7 @@ void setup() {
   
   // Initialize claw (start open)
   pinMode(clawPin, OUTPUT);
-  digitalWrite(clawPin, LOW); // LOW = open (inverted logic)
+  digitalWrite(clawPin, LOW); // LOW = open as I am using Inverted relay
   clawState = false;
   
   Serial.println("Robotic Arm Control Ready");
@@ -127,7 +127,7 @@ void runZAxis(char direction, float seconds) {
   digitalWrite(motorPins[2][1], LOW);
   delay(switchDelay);
   
-  // INVERTED mapping: U -> motorPins[2][1], D -> motorPins[2][0]
+  // INVERTED mapping: U -> motorPins[2][1], D -> motorPins[2][0] 
   if (direction == 'U') digitalWrite(motorPins[2][1], HIGH); 
   else digitalWrite(motorPins[2][0], HIGH); 
   
