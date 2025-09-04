@@ -50,7 +50,8 @@ for cnt in contours:
 if not found:
     print("No cloth detected")
 
-cv2.imwrite('detection_output_contour.jpg', output)
+cv2.imwrite('detection_output_contour.jpg', output) # The Output of the detection is stored as a photo with the name detection_output_contour.jpg
 print("Detection output saved as detection_output_contour.jpg")
 
 cap.release()
+
