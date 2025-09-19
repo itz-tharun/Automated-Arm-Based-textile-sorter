@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-# A list to store the clicked points
+# A list to store the clicked points.
 points = []
 
 # Mouse callback function
