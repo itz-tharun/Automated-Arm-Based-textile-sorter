@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-# Step 0: Capture image from camera
+# Step 0: Capture image from camera.
 camera = cv2.VideoCapture(0)
 if not camera.isOpened():
     print("❌ Error: Could not open camera.")
