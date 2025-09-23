@@ -1,79 +1,59 @@
-# This script compares a reference image of an empty tray with a new image
-# to detect the presence and location of a cloth.
-
 import cv2
 import numpy as np
 
-def compare_images(reference_image_path, live_image_path, output_image_path, threshold_value=25):
-    """
-    Compares two images to find and highlight differences.
+# Open camera
+cap = cv2.VideoCapture(1)
 
-    Args:
-        reference_image_path (str): The file path to the reference image of an empty tray.
-        live_image_path (str): The file path to the live image with a potential object.
-        output_image_path (str): The file path to save the output difference image.
-        threshold_value (int): The sensitivity threshold for difference detection (0-255).
-                               Lower values are more sensitive.
-    """
-    try:
-        # Load the two images
-        ref_image = cv2.imread(reference_image_path)
-        live_image = cv2.imread(live_image_path)
-        
-        if ref_image is None:
-            print(f"Error: Could not load the reference image at {reference_image_path}")
-            return
-        if live_image is None:
-            print(f"Error: Could not load the live image at {live_image_path}")
-            return
+# Read the first frame as reference
+ret, reference = cap.read()
+if not ret:
+    print("Failed to capture reference frame.")
+    cap.release()
+    exit()
 
-        # Ensure images are the same size
-        if ref_image.shape != live_image.shape:
-            print("Error: The images must be the same size for comparison.")
-            return
+reference_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+reference_gray = cv2.GaussianBlur(reference_gray, (21, 21), 0)
 
-        # Convert images to grayscale for simpler comparison
-        ref_gray = cv2.cvtColor(ref_image, cv2.COLOR_BGR2GRAY)
-        live_gray = cv2.cvtColor(live_image, cv2.COLOR_BGR2GRAY)
+print("Reference frame captured. Starting detection...")
 
-        # Calculate the absolute difference between the two grayscale images
-        diff = cv2.absdiff(ref_gray, live_gray)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-        # Apply a binary threshold to the difference image.
-        # Pixels with a difference above the threshold are set to 255 (white).
-        _, thresholded_diff = cv2.threshold(diff, threshold_value, 255, cv2.THRESH_BINARY)
-        
-        # Count the number of white pixels to determine the percentage of change
-        total_pixels = thresholded_diff.size
-        changed_pixels = np.count_nonzero(thresholded_diff)
-        percentage_change = (changed_pixels / total_pixels) * 100
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
-        print(f"Percentage of change detected: {percentage_change:.2f}%")
+    # Compute absolute difference with reference
+    diff = cv2.absdiff(reference_gray, gray)
+    _, thresh = cv2.threshold(diff, 30, 200, cv2.THRESH_BINARY)  # higher threshold for noise reduction
+    thresh = cv2.dilate(thresh, None, iterations=2)
 
-        # Find contours of the changed areas
-        contours, _ = cv2.findContours(thresholded_diff, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # Draw rectangles around the detected differences on the live image
-        output_image = live_image.copy()
-        for contour in contours:
-            # Filter out small areas of noise
-            if cv2.contourArea(contour) > 100:
-                x, y, w, h = cv2.boundingRect(contour)
-                cv2.rectangle(output_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    # Find contours of changes
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Save the resulting image with the highlighted differences
-        cv2.imwrite(output_image_path, output_image)
-        print(f"Difference image saved to {output_image_path}")
+    if contours:
+        # Pick the largest contour
+        largest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest_contour)
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
+        if area > 500:  # filter out small changes/noise
+            # Draw contour outline
+            cv2.drawContours(frame, [largest_contour], -1, (0, 255, 0), 2)
 
-# --- Main Program Execution ---
-if __name__ == "__main__":
-    # Define your image file paths here
-    REFERENCE_IMAGE = 'empty_tray.jpg'  # Change this to your reference image file
-    LIVE_IMAGE = 'tray_with_cloth.jpg'  # Change this to your live image file
-    OUTPUT_IMAGE = 'difference_detected.jpg' # The name for the output file
+            # Find centroid
+            M = cv2.moments(largest_contour)
+            if M["m00"] != 0:
+                cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
+                cv2.circle(frame, (cX, cY), 5, (0, 0, 255), -1)
+                print(f"Centroid: ({cX}, {cY})")
 
-    # Run the comparison
-    compare_images(REFERENCE_IMAGE, LIVE_IMAGE, OUTPUT_IMAGE)
+    cv2.imshow("Change Detection", frame)
+
+    # Press 'q' to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
