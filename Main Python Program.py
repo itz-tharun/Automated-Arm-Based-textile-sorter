@@ -1,118 +1,190 @@
-import cv2
+import serial
+import time
 import numpy as np
+import cv2
 
-# --- Camera Capture and Perspective Transform (from previous solution) ---
+# --- Part 1: Your Calibration Data ---
+# These data points map a pixel coordinate to a motor movement time.
+# They should be obtained by measuring the arm's travel time to specific points
+# in the camera's FULL FIELD OF VIEW.
+x_calibration_data = [
+    (454, 0),
+    (239, 1),
+    (330, 1),
+    (542, 0)
+]
 
-# Step 0: Capture image from camera
-camera = cv2.VideoCapture(1) # Use camera index 0 as a default. If camera 1 was specifically requested, use 1.
-if not camera.isOpened():
-    print("❌ Error: Could not open camera.")
-    exit()
-ret, image = camera.read()
-if not ret:
-    print("❌ Error: Could not read frame from camera.")
-    exit()
-camera.release()
-orig_full_frame = image.copy() # Store the original full frame for context if needed later
+y_calibration_data = [
+    (105, 0.7),
+    (136, 0.7),
+    (435, 4),
+    (367, 4)
+]
 
-# Step 1: Use fixed, hardcoded coordinates for the tray
-# These are the points you provided: (19, 63), (110, 433), (441, 306), (289, 1)
-# The order_points function will sort them into top-left, top-right, bottom-right, bottom-left.
-fixed_tray_contour = np.array([(168, 92), (232, 454), (571, 362), (451, 57)], dtype="float32").reshape(4, 1, 2)
+# --- Part 2: Automatic Calibration ---
+x_pixels = np.array([p[0] for p in x_calibration_data])
+x_times = np.array([p[1] for p in x_calibration_data])
+x_slope, x_intercept = np.polyfit(x_pixels, x_times, 1)
 
-# Step 2: Perspective transform
-def order_points(pts):
-    pts = pts.reshape(4, 2)
-    rect = np.zeros((4, 2), dtype="float32")
+y_pixels = np.array([p[0] for p in y_calibration_data])
+y_times = np.array([p[1] for p in y_calibration_data])
+y_slope, y_intercept = np.polyfit(y_pixels, y_times, 1)
+
+print("✅ Calibration complete. Your linear model is:")
+print(f"X_time = {x_slope:.4f} * x_pixel + {x_intercept:.4f}")
+print(f"Y_time = {y_slope:.4f} * y_pixel + {y_intercept:.4f}")
+print("-" * 40)
+
+# --- Part 3: Serial Communication Setup ---
+PORT = 'COM7'
+BAUD_RATE = 9600
+ARDUINO_RESET_DELAY = 2
+
+def send_command(ser, command):
+    """Sends a command to the Arduino and waits for a brief period."""
+    print(f"Sending command: {command}")
+    ser.write(f"{command}\n".encode())
+    time.sleep(0.5)
+
+try:
+    # Establish serial connection
+    print(f"Connecting to Arduino on port {PORT} at {BAUD_RATE} baud...")
+    ser = serial.Serial(PORT, BAUD_RATE, timeout=1)
+    time.sleep(ARDUINO_RESET_DELAY)
+    print("Connection established. Waiting for robot arm to be ready...")
+
+    # --- Part 4: Automated White Object Detection with Perspective Transform ---
+    camera = cv2.VideoCapture(1)
+    if not camera.isOpened():
+        print("❌ Error: Could not open camera.")
+        raise Exception("Camera not found")
+
+    ret, frame = camera.read()
+    if not ret:
+        print("❌ Error: Could not read frame from camera.")
+        raise Exception("Frame not captured")
+    camera.release()
+
+    # Define the 4 points of the tray on the camera image
+    # IMPORTANT: These points must be the actual corner coordinates of the tray in the camera's field of view.
+    # They should be determined by manually inspecting the camera's live feed and are independent of the linear calibration data.
+    fixed_tray_contour = np.array([
+        (456, 106), (240, 137), (331, 436), (543, 368)
+    ], dtype="float32")
+
+    def order_points(pts):
+        pts = pts.reshape(4, 2)
+        rect = np.zeros((4, 2), dtype="float32")
+        s = pts.sum(axis=1)
+        rect[0] = pts[np.argmin(s)]
+        rect[2] = pts[np.argmax(s)]
+        diff = np.diff(pts, axis=1)
+        rect[1] = pts[np.argmin(diff)]
+        rect[3] = pts[np.argmax(diff)]
+        return rect
+
+    # Get the perspective transform matrix and warp the image
+    rect = order_points(fixed_tray_contour)
+    (tl, tr, br, bl) = rect
+    widthA = np.linalg.norm(br - bl)
+    widthB = np.linalg.norm(tr - tl)
+    maxWidth = max(int(widthA), int(widthB))
+    heightA = np.linalg.norm(tr - br)
+    heightB = np.linalg.norm(tl - bl)
+    maxHeight = max(int(heightA), int(heightB))
+    dst = np.array([
+        [0, 0], [maxWidth - 1, 0], [maxWidth - 1, maxHeight - 1], [0, maxHeight - 1]
+    ], dtype="float32")
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped_tray = cv2.warpPerspective(frame, M, (maxWidth, maxHeight))
+
+    # Convert to HSV to better detect white colors
+    hsv = cv2.cvtColor(warped_tray, cv2.COLOR_BGR2HSV)
+
+    # Define a broad range for cloth color
+    lower_cloth_color = np.array([0, 50, 50])
+    upper_cloth_color = np.array([179, 255, 255])
+
+    # Create a mask and apply morphological operations
+    mask = cv2.inRange(hsv, lower_cloth_color, upper_cloth_color)
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    # Find the largest contour within the warped ROI
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    found_white_object = False
+    if contours:
+        largest_contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(largest_contour) > 500:
+            found_white_object = True
+            M_contour = cv2.moments(largest_contour)
+            if M_contour["m00"] != 0:
+                # Centroid is relative to the warped image
+                cx_warped = int(M_contour['m10'] / M_contour['m00'])
+                cy_warped = int(M_contour['m01'] / M_contour['m00'])
+                
+                # Invert the perspective transform to get the centroid's original FOV coordinates
+                Minv = cv2.getPerspectiveTransform(dst, rect)
+                centroid_warped = np.array([[cx_warped, cy_warped]], dtype='float32')
+                centroid_fov = cv2.perspectiveTransform(centroid_warped.reshape(-1, 1, 2), Minv)
+                cx_fov = int(centroid_fov[0][0][0])
+                cy_fov = int(centroid_fov[0][0][1])
+
+                # Draw the outline on the original frame using the transformed contour
+                largest_contour_fov = cv2.perspectiveTransform(largest_contour.astype(np.float32), Minv)
+                cv2.drawContours(frame, [np.int32(largest_contour_fov)], -1, (0, 255, 0), 2)
+                cv2.circle(frame, (cx_fov, cy_fov), 5, (0, 0, 255), -1)
+                
+                print(f"✅ White object detected at centroid (in full FOV): ({cx_fov}, {cy_fov})")
+            else:
+                found_white_object = False
     
-    # Sum the coordinates to find top-left (smallest sum) and bottom-right (largest sum)
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]   # top-left
-    rect[2] = pts[np.argmax(s)]   # bottom-right
+    # Save the output image with the detected object's centroid marked
+    cv2.imwrite('tray_cloth_detection_output.jpg', frame)
+    print("Image with detected object saved as tray_cloth_detection_output.jpg")
     
-    # Compute the difference between the coordinates to find top-right (smallest difference)
-    # and bottom-left (largest difference)
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]  # top-right
-    rect[3] = pts[np.argmax(diff)]  # bottom-left
+    if not found_white_object:
+        print("⚠️ No white object detected. Exiting.")
+        exit()
+
+    # --- Part 5: Calculate and Execute Movements ---
+    x_to_object_time = (x_slope * cx_fov) + x_intercept
+    y_to_object_time = (y_slope * cy_fov) + y_intercept
+    x_to_object_time = max(0, x_to_object_time)
+    y_to_object_time = max(0, y_to_object_time)
+
+    print("\nStarting pick-and-place cycle.")
     
-    return rect
+    # === STEP A: MOVE TO WHITE OBJECT ===
+    print("--- Step 1: Moving to object location ---")
+    send_command(ser, f"X F {x_to_object_time:.2f}")
+    send_command(ser, f"Y F {y_to_object_time:.2f}")
+    
+    # === STEP B: PICK UP OBJECT ===
+    print("--- Step 2: Picking up the object ---")
+    send_command(ser, "Z D 3.0")
+    send_command(ser, "C C")
+    send_command(ser, "Z U 4.3")
+    
+    # === STEP C: MOVE TO BIN ===
+    print("--- Step 3: Moving to drop-off bin (home position) ---")
+    send_command(ser, f"X R {x_to_object_time:.2f}")
+    send_command(ser, f"Y R {y_to_object_time:.2f}")
 
-rect = order_points(fixed_tray_contour)
-(tl, tr, br, bl) = rect
+    # === STEP D: DROP OFF OBJECT ===
+    print("--- Step 4: Dropping off the object ---")
+    send_command(ser, "C O")
+    
+    print("\n✅ Cycle complete!")
 
-# Compute new width and height based on the maximum dimensions of the transformed rectangle
-widthA = np.linalg.norm(br - bl)
-widthB = np.linalg.norm(tr - tl)
-maxWidth = max(int(widthA), int(widthB))
-
-heightA = np.linalg.norm(tr - br)
-heightB = np.linalg.norm(tl - bl)
-maxHeight = max(int(heightA), int(heightB))
-
-# Define the destination points for the perspective transform (a perfect rectangle)
-dst = np.array([
-    [0, 0],
-    [maxWidth - 1, 0],
-    [maxWidth - 1, maxHeight - 1],
-    [0, maxHeight - 1]], dtype="float32")
-
-# Get the perspective transform matrix
-M = cv2.getPerspectiveTransform(rect, dst)
-# Apply the perspective transform to the original full frame
-warped_tray = cv2.warpPerspective(orig_full_frame, M, (maxWidth, maxHeight))
-
-# --- Cloth Detection (applied to the warped_tray) ---
-
-# Convert the warped tray image to HSV color space
-hsv = cv2.cvtColor(warped_tray, cv2.COLOR_BGR2HSV)
-
-# Define the color range for cloth detection (these are example values, adjust as needed)
-# The provided lower/upper bounds (0, 50, 50) and (179, 255, 255) cover a very broad range,
-# essentially detecting most saturated colors. You might want to narrow this for specific cloth colors.
-lower_cloth_color = np.array([0, 50, 50])
-upper_cloth_color = np.array([179, 255, 255])
-
-# Create a mask to isolate pixels within the defined color range
-mask = cv2.inRange(hsv, lower_cloth_color, upper_cloth_color)
-
-
-# Morphological operations to reduce noise and close gaps
-kernel = np.ones((5, 5), np.uint8)
-mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel) # Removes small objects (noise)
-mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel) # Closes small holes inside larger objects
-
-# Find contours in the masked image
-contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-# Prepare an output image, which will be the warped tray with detections drawn on it
-output_tray_detection = warped_tray.copy()
-found_cloth = False
-
-for cnt in contours:
-    area = cv2.contourArea(cnt)
-    if area > 500:  # Filter out small contours which are likely noise
-        found_cloth = True
-        
-        # Calculate the centroid (center of mass) of the contour
-        M = cv2.moments(cnt)
-        if M["m00"] != 0: # Avoid division by zero
-            cx = int(M['m10'] / M['m00'])
-            cy = int(M['m01'] / M['m00'])
-            print(f"Cloth found at centroid (on warped tray): ({cx},{cy})")
-
-            # Draw the contour outline on the output image
-            cv2.drawContours(output_tray_detection, [cnt], -1, (0, 255, 0), 2) # Green outline
-            
-            # Draw a circle at the centroid
-            cv2.circle(output_tray_detection, (cx, cy), 5, (0, 0, 255), -1) # Red circle
-        else:
-            print("Warning: Moment m00 is zero, cannot calculate centroid for a contour.")
-
-
-if not found_cloth:
-    print("No cloth detected within the defined tray area.")
-
-# Save the output image with cloth detections
-cv2.imwrite('tray_cloth_detection_output.jpg', output_tray_detection)
-print("Detection output on warped tray saved as tray_cloth_detection_output.jpg")
+except serial.SerialException as e:
+    print(f"❌ Could not open serial port '{PORT}'. Check the connection and port name.")
+    print(f"Error: {e}")
+except Exception as e:
+    print(f"❌ An unexpected error occurred: {e}")
+finally:
+    if 'ser' in locals() and ser.is_open:
+        ser.close()
+        print("Serial connection closed.")
