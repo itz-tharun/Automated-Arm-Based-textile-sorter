@@ -2,23 +2,22 @@ import serial
 import time
 import numpy as np
 import cv2
+import sys
 
 # --- Part 1: Your Calibration Data ---
 # These data points map a pixel coordinate to a motor movement time.
-# They should be obtained by measuring the arm's travel time to specific points
-# in the camera's FULL FIELD OF VIEW.
 x_calibration_data = [
-    (454, 0),
-    (239, 1),
-    (330, 1),
-    (542, 0)
+    (367, 0),
+    (230, 0.6),
+    (260, 0.6),
+    (415, 0)
 ]
 
 y_calibration_data = [
-    (105, 0.7),
-    (136, 0.7),
-    (435, 4),
-    (367, 4)
+    (106, 0.4),
+    (121, 0.4),
+    (416, 4.2),
+    (377, 4.2)
 ]
 
 # --- Part 2: Automatic Calibration ---
@@ -46,139 +45,149 @@ def send_command(ser, command):
     ser.write(f"{command}\n".encode())
     time.sleep(0.5)
 
-try:
-    # Establish serial and camera connection
-    print(f"Connecting to Arduino on port {PORT} at {BAUD_RATE} baud...")
-    ser = serial.Serial(PORT, BAUD_RATE, timeout=1)
-    time.sleep(ARDUINO_RESET_DELAY)
-    print("Connection established. Starting continuous operation loop...")
-    print("Press 'q' at any time to quit the program.")
-    
-    camera = cv2.VideoCapture(1)
-    if not camera.isOpened():
-        print("❌ Error: Could not open camera.")
-        raise Exception("Camera not found")
+# --- Part 4: Automated White Object Detection and Control Logic ---
+# Define the 4 points of the tray on the camera image
+fixed_tray_contour = np.array([
+    (367, 106), (230, 121), (260, 416), (415, 377)
+], dtype="float32")
 
-    # --- Part 4: Automated White Object Detection and Control Loop ---
-    # Define the 4 points of the tray on the camera image
-    fixed_tray_contour = np.array([
-        (456, 106), (240, 137), (331, 436), (543, 368)
+def order_points(pts):
+    pts = pts.reshape(4, 2)
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+    return rect
+
+def perform_pick_and_place(ser, camera):
+    """Performs a single pick-and-place cycle."""
+    print("\n--- Starting new detection cycle ---")
+    
+    ret, frame = camera.read()
+    if not ret:
+        print("❌ Error: Could not read frame.")
+        return False
+    
+    # Get the perspective transform matrix and warp the image
+    rect = order_points(fixed_tray_contour)
+    (tl, tr, br, bl) = rect
+    widthA = np.linalg.norm(br - bl)
+    widthB = np.linalg.norm(tr - tl)
+    maxWidth = max(int(widthA), int(widthB))
+    heightA = np.linalg.norm(tr - br)
+    heightB = np.linalg.norm(tl - bl)
+    maxHeight = max(int(heightA), int(heightB))
+    dst = np.array([
+        [0, 0], (maxWidth - 1, 0), (maxWidth - 1, maxHeight - 1), (0, maxHeight - 1)
     ], dtype="float32")
-    
-    def order_points(pts):
-        pts = pts.reshape(4, 2)
-        rect = np.zeros((4, 2), dtype="float32")
-        s = pts.sum(axis=1)
-        rect[0] = pts[np.argmin(s)]
-        rect[2] = pts[np.argmax(s)]
-        diff = np.diff(pts, axis=1)
-        rect[1] = pts[np.argmin(diff)]
-        rect[3] = pts[np.argmax(diff)]
-        return rect
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped_tray = cv2.warpPerspective(frame, M, (maxWidth, maxHeight))
 
+    # Convert to HSV to better detect white colors
+    hsv = cv2.cvtColor(warped_tray, cv2.COLOR_BGR2HSV)
+
+    # Define a broad range for cloth color
+    lower_cloth_color = np.array([0, 50, 50])
+    upper_cloth_color = np.array([179, 255, 255])
+
+    # Create a mask and apply morphological operations
+    mask = cv2.inRange(hsv, lower_cloth_color, upper_cloth_color)
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    # Find the largest contour within the warped ROI
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    found_white_object = False
+    if contours:
+        largest_contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(largest_contour) > 500:
+            found_white_object = True
+            M_contour = cv2.moments(largest_contour)
+            if M_contour["m00"] != 0:
+                cx_warped = int(M_contour['m10'] / M_contour['m00'])
+                cy_warped = int(M_contour['m01'] / M_contour['m00'])
+                
+                Minv = cv2.getPerspectiveTransform(dst, rect)
+                centroid_warped = np.array([[cx_warped, cy_warped]], dtype='float32')
+                centroid_fov = cv2.perspectiveTransform(centroid_warped.reshape(-1, 1, 2), Minv)
+                cx_fov = int(centroid_fov[0][0][0])
+                cy_fov = int(centroid_fov[0][0][1])
+                
+                print(f"✅ White object detected at centroid (in full FOV): ({cx_fov}, {cy_fov})")
+            else:
+                found_white_object = False
+    
+    if not found_white_object:
+        print("⚠️ No white object detected.")
+        return False
+
+    # Calculate and Execute Movements
+    x_to_object_time = (x_slope * cx_fov) + x_intercept
+    y_to_object_time = (y_slope * cy_fov) + y_intercept
+    x_to_object_time = max(0, x_to_object_time)
+    y_to_object_time = max(0, y_to_object_time)
+
+    print("\nStarting pick-and-place cycle.")
+    
+    # === STEP A: MOVE TO WHITE OBJECT ===
+    print("--- Step 1: Moving to object location ---")
+    send_command(ser, f"XY F {x_to_object_time:.2f} {y_to_object_time:.2f}")
+    
+    # === STEP B: PICK UP OBJECT ===
+    print("--- Step 2: Picking up the object ---")
+    send_command(ser, "Z D 2.3")
+    send_command(ser, "C C")
+    send_command(ser, "Z U 3.3")
+    
+    # === STEP C: MOVE TO BIN ===
+    print("--- Step 3: Moving to drop-off bin (home position) ---")
+    send_command(ser, f"XY R {x_to_object_time:.2f} {y_to_object_time:.2f}")
+
+    # === STEP D: DROP OFF OBJECT ===
+    print("--- Step 4: Dropping off the object ---")
+    send_command(ser, "C O")
+    
+    print("\n✅ Cycle complete!")
+    return True
+
+def run_manual_mode(ser):
+    """Allows manual control of the robot arm via the console."""
+    print("Manual control mode activated. Enter commands (e.g., 'X F 1.0').")
+    print("Type 'q' to return to the main menu.")
+    while True:
+        command = input("Enter command: ").strip()
+        if command.lower() == 'q':
+            print("Returning to main menu.")
+            break
+        if command:
+            try:
+                send_command(ser, command)
+            except serial.SerialException as e:
+                print(f"❌ Serial communication error: {e}. Check the connection.")
+                break
+
+def run_one_time_mode(ser, camera):
+    """Runs a single automatic pick-and-place cycle."""
+    perform_pick_and_place(ser, camera)
+    print("One-time cycle complete. Returning to main menu.")
+
+def run_continuous_mode(ser, camera):
+    """Runs automatic pick-and-place cycles continuously."""
+    print("Continuous automatic mode activated.")
+    print("Press 'q' at any time to quit the program.")
     while True:
         try:
-            print("\n--- Starting new detection cycle ---")
-            
-            ret, frame = camera.read()
-            if not ret:
-                print("❌ Error: Could not read frame. Retrying in 5 seconds...")
-                time.sleep(5)
-                continue
-            
-            # Get the perspective transform matrix and warp the image
-            rect = order_points(fixed_tray_contour)
-            (tl, tr, br, bl) = rect
-            widthA = np.linalg.norm(br - bl)
-            widthB = np.linalg.norm(tr - tl)
-            maxWidth = max(int(widthA), int(widthB))
-            heightA = np.linalg.norm(tr - br)
-            heightB = np.linalg.norm(tl - bl)
-            maxHeight = max(int(heightA), int(heightB))
-            dst = np.array([
-                [0, 0], [maxWidth - 1, 0], [maxWidth - 1, maxHeight - 1], [0, maxHeight - 1]
-            ], dtype="float32")
-            M = cv2.getPerspectiveTransform(rect, dst)
-            warped_tray = cv2.warpPerspective(frame, M, (maxWidth, maxHeight))
-
-            # Convert to HSV to better detect white colors
-            hsv = cv2.cvtColor(warped_tray, cv2.COLOR_BGR2HSV)
-
-            # Define a broad range for cloth color
-            lower_cloth_color = np.array([0, 50, 50])
-            upper_cloth_color = np.array([179, 255, 255])
-
-            # Create a mask and apply morphological operations
-            mask = cv2.inRange(hsv, lower_cloth_color, upper_cloth_color)
-            kernel = np.ones((5, 5), np.uint8)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-            # Find the largest contour within the warped ROI
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            found_white_object = False
-            if contours:
-                largest_contour = max(contours, key=cv2.contourArea)
-                if cv2.contourArea(largest_contour) > 500:
-                    found_white_object = True
-                    M_contour = cv2.moments(largest_contour)
-                    if M_contour["m00"] != 0:
-                        # Centroid is relative to the warped image
-                        cx_warped = int(M_contour['m10'] / M_contour['m00'])
-                        cy_warped = int(M_contour['m01'] / M_contour['m00'])
-                        
-                        # Invert the perspective transform to get the centroid's original FOV coordinates
-                        Minv = cv2.getPerspectiveTransform(dst, rect)
-                        centroid_warped = np.array([[cx_warped, cy_warped]], dtype='float32')
-                        centroid_fov = cv2.perspectiveTransform(centroid_warped.reshape(-1, 1, 2), Minv)
-                        cx_fov = int(centroid_fov[0][0][0])
-                        cy_fov = int(centroid_fov[0][0][1])
-
-                        # Draw the outline on the original frame using the transformed contour
-                        largest_contour_fov = cv2.perspectiveTransform(largest_contour.astype(np.float32), Minv)
-                        cv2.drawContours(frame, [np.int32(largest_contour_fov)], -1, (0, 255, 0), 2)
-                        cv2.circle(frame, (cx_fov, cy_fov), 5, (0, 0, 255), -1)
-                        
-                        print(f"✅ White object detected at centroid (in full FOV): ({cx_fov}, {cy_fov})")
-                    else:
-                        found_white_object = False
-            
-            if not found_white_object:
-                print("⚠️ No white object detected. Scanning again in 10 seconds...")
+            if perform_pick_and_place(ser, camera):
+                print("Cycle complete. Waiting 10 seconds before next scan...")
                 time.sleep(10)
-                continue
-
-            # --- Part 5: Calculate and Execute Movements ---
-            x_to_object_time = (x_slope * cx_fov) + x_intercept
-            y_to_object_time = (y_slope * cy_fov) + y_intercept
-            x_to_object_time = max(0, x_to_object_time)
-            y_to_object_time = max(0, y_to_object_time)
-
-            print("\nStarting pick-and-place cycle.")
-            
-            # === STEP A: MOVE TO WHITE OBJECT ===
-            print("--- Step 1: Moving to object location ---")
-            send_command(ser, f"X F {x_to_object_time:.2f}")
-            send_command(ser, f"Y F {y_to_object_time:.2f}")
-            
-            # === STEP B: PICK UP OBJECT ===
-            print("--- Step 2: Picking up the object ---")
-            send_command(ser, "Z D 3.0")
-            send_command(ser, "C C")
-            send_command(ser, "Z U 4.3")
-            
-            # === STEP C: MOVE TO BIN ===
-            print("--- Step 3: Moving to drop-off bin (home position) ---")
-            send_command(ser, f"X R {x_to_object_time:.2f}")
-            send_command(ser, f"Y R {y_to_object_time:.2f}")
-
-            # === STEP D: DROP OFF OBJECT ===
-            print("--- Step 4: Dropping off the object ---")
-            send_command(ser, "C O")
-            
-            print("\n✅ Cycle complete! Ready for next object...")
-            time.sleep(10)
+            else:
+                print("No object found. Scanning again in 10 seconds...")
+                time.sleep(10)
 
         except serial.SerialException as e:
             print(f"❌ Serial communication error: {e}. Attempting to reconnect...")
@@ -191,13 +200,50 @@ try:
                 print("✅ Reconnected to Arduino.")
             except serial.SerialException:
                 print("❌ Failed to reconnect. Check the physical connection and try again.")
-                # If reconnection fails, we let the loop continue and try again on the next iteration.
+                return # Exit this mode
         
         # Check for 'q' key press to quit the program
         if cv2.waitKey(1) & 0xFF == ord('q'):
             print("Quitting program as requested...")
-            break
+            sys.exit()
 
+# Main program loop
+try:
+    print(f"Connecting to Arduino on port {PORT} at {BAUD_RATE} baud...")
+    ser = serial.Serial(PORT, BAUD_RATE, timeout=1)
+    time.sleep(ARDUINO_RESET_DELAY)
+    print("Connection established. Please wait for camera initialization...")
+    
+    camera = cv2.VideoCapture(1)
+    if not camera.isOpened():
+        print("❌ Error: Could not open camera.")
+        raise Exception("Camera not found")
+    print("Camera initialized.")
+    
+    while True:
+        print("\n--- Main Menu ---")
+        print("1. Manual Control")
+        print("2. Automatic One-Time Cycle")
+        print("3. Automatic Continuous Cycle")
+        print("Q. Quit")
+        
+        choice = input("Enter your choice: ").strip().lower()
+        
+        if choice == '1':
+            run_manual_mode(ser)
+        elif choice == '2':
+            run_one_time_mode(ser, camera)
+        elif choice == '3':
+            run_continuous_mode(ser, camera)
+        elif choice == 'q':
+            print("Exiting program.")
+            break
+        else:
+            print("Invalid choice. Please enter 1, 2, 3, or Q.")
+
+except serial.SerialException as e:
+    print(f"❌ Could not open serial port '{PORT}'. Check the connection and port name.")
+    print(f"Error: {e}")
 except Exception as e:
     print(f"❌ An unexpected error occurred: {e}")
 finally:
