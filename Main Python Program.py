@@ -8,8 +8,8 @@ import sys
 # These data points map a pixel coordinate to a motor movement time.
 x_calibration_data = [
     (367, 0),
-    (230, 0.6),
-    (260, 0.6),
+    (230, 1.2),
+    (260, 1.2),
     (415, 0)
 ]
 
@@ -45,96 +45,79 @@ def send_command(ser, command):
     ser.write(f"{command}\n".encode())
     time.sleep(0.5)
 
-# --- Part 4: Automated White Object Detection and Control Logic ---
+# --- Part 4: Automated Image Subtraction Logic ---
+# These constants and the tray contour are from the second script you provided.
+THRESHOLD_VALUE = 50
+MIN_CONTOUR_AREA = 225
+DILATION_ITERATIONS = 5
+
 # Define the 4 points of the tray on the camera image
 fixed_tray_contour = np.array([
-    (367, 106), (230, 121), (260, 416), (415, 377)
-], dtype="float32")
+    (374, 122), (238, 133), (267, 428), (426, 394)
+], dtype="int32")
 
-def order_points(pts):
-    pts = pts.reshape(4, 2)
-    rect = np.zeros((4, 2), dtype="float32")
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
-    return rect
+def apply_tray_mask(image, contour):
+    """Mask out everything except the tray region."""
+    mask = np.zeros(image.shape[:2], dtype="uint8")
+    cv2.fillPoly(mask, [contour], 255)
+    return cv2.bitwise_and(image, image, mask=mask)
 
-def perform_pick_and_place(ser, camera):
-    """Performs a single pick-and-place cycle."""
+def perform_pick_and_place(ser, camera, reference_image):
+    """Performs a single pick-and-place cycle using image subtraction."""
     print("\n--- Starting new detection cycle ---")
     
-    ret, frame = camera.read()
+    ret, live_image = camera.read()
     if not ret:
         print("❌ Error: Could not read frame.")
         return False
     
-    # Get the perspective transform matrix and warp the image
-    rect = order_points(fixed_tray_contour)
-    (tl, tr, br, bl) = rect
-    widthA = np.linalg.norm(br - bl)
-    widthB = np.linalg.norm(tr - tl)
-    maxWidth = max(int(widthA), int(widthB))
-    heightA = np.linalg.norm(tr - br)
-    heightB = np.linalg.norm(tl - bl)
-    maxHeight = max(int(heightA), int(heightB))
-    dst = np.array([
-        [0, 0], (maxWidth - 1, 0), (maxWidth - 1, maxHeight - 1), (0, maxHeight - 1)
-    ], dtype="float32")
-    M = cv2.getPerspectiveTransform(rect, dst)
-    warped_tray = cv2.warpPerspective(frame, M, (maxWidth, maxHeight))
+    # Apply tray mask and convert to grayscale for comparison
+    ref_gray = cv2.cvtColor(apply_tray_mask(reference_image, fixed_tray_contour), cv2.COLOR_BGR2GRAY)
+    live_gray = cv2.cvtColor(apply_tray_mask(live_image, fixed_tray_contour), cv2.COLOR_BGR2GRAY)
 
-    # Convert to HSV to better detect white colors
-    hsv = cv2.cvtColor(warped_tray, cv2.COLOR_BGR2HSV)
+    # Calculate absolute difference
+    diff = cv2.absdiff(ref_gray, live_gray)
+    _, thresh = cv2.threshold(diff, THRESHOLD_VALUE, 255, cv2.THRESH_BINARY)
+    thresh = cv2.dilate(thresh, None, iterations=DILATION_ITERATIONS)
 
-    # Define a broad range for cloth color
-    lower_cloth_color = np.array([0, 50, 50])
-    upper_cloth_color = np.array([179, 255, 255])
+    # Find contours of changes
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Create a mask and apply morphological operations
-    mask = cv2.inRange(hsv, lower_cloth_color, upper_cloth_color)
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-    # Find the largest contour within the warped ROI
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    found_white_object = False
+    found_object = False
     if contours:
         largest_contour = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(largest_contour) > 500:
-            found_white_object = True
+        if cv2.contourArea(largest_contour) > MIN_CONTOUR_AREA:
+            found_object = True
             M_contour = cv2.moments(largest_contour)
             if M_contour["m00"] != 0:
-                cx_warped = int(M_contour['m10'] / M_contour['m00'])
-                cy_warped = int(M_contour['m01'] / M_contour['m00'])
+                cx = int(M_contour['m10'] / M_contour['m00'])
+                cy = int(M_contour['m01'] / M_contour['m00'])
                 
-                Minv = cv2.getPerspectiveTransform(dst, rect)
-                centroid_warped = np.array([[cx_warped, cy_warped]], dtype='float32')
-                centroid_fov = cv2.perspectiveTransform(centroid_warped.reshape(-1, 1, 2), Minv)
-                cx_fov = int(centroid_fov[0][0][0])
-                cy_fov = int(centroid_fov[0][0][1])
+                print(f"✅ Object detected at centroid: ({cx}, {cy})")
                 
-                print(f"✅ White object detected at centroid (in full FOV): ({cx_fov}, {cy_fov})")
+                # Draw the detected object and centroid for visualization
+                display_frame = live_image.copy()
+                cv2.polylines(display_frame, [fixed_tray_contour], True, (255, 0, 0), 2)
+                cv2.drawContours(display_frame, [largest_contour], -1, (0, 255, 0), 2)
+                cv2.circle(display_frame, (cx, cy), 5, (0, 0, 255), -1)
+                cv2.imshow("Detection Result", display_frame)
+                cv2.waitKey(1)
             else:
-                found_white_object = False
-    
-    if not found_white_object:
-        print("⚠️ No white object detected.")
+                found_object = False
+
+    if not found_object:
+        print("⚠️ No object detected.")
         return False
 
     # Calculate and Execute Movements
-    x_to_object_time = (x_slope * cx_fov) + x_intercept
-    y_to_object_time = (y_slope * cy_fov) + y_intercept
+    x_to_object_time = (x_slope * cx) + x_intercept
+    y_to_object_time = (y_slope * cy) + y_intercept
     x_to_object_time = max(0, x_to_object_time)
     y_to_object_time = max(0, y_to_object_time)
 
     print("\nStarting pick-and-place cycle.")
     
-    # === STEP A: MOVE TO WHITE OBJECT ===
+    # === STEP A: MOVE TO OBJECT ===
     print("--- Step 1: Moving to object location ---")
     send_command(ser, f"XY F {x_to_object_time:.2f} {y_to_object_time:.2f}")
     
@@ -142,7 +125,7 @@ def perform_pick_and_place(ser, camera):
     print("--- Step 2: Picking up the object ---")
     send_command(ser, "Z D 2.3")
     send_command(ser, "C C")
-    send_command(ser, "Z U 3.3")
+    send_command(ser, "Z U 3.1")
     
     # === STEP C: MOVE TO BIN ===
     print("--- Step 3: Moving to drop-off bin (home position) ---")
@@ -171,18 +154,18 @@ def run_manual_mode(ser):
                 print(f"❌ Serial communication error: {e}. Check the connection.")
                 break
 
-def run_one_time_mode(ser, camera):
+def run_one_time_mode(ser, camera, reference_image):
     """Runs a single automatic pick-and-place cycle."""
-    perform_pick_and_place(ser, camera)
+    perform_pick_and_place(ser, camera, reference_image)
     print("One-time cycle complete. Returning to main menu.")
 
-def run_continuous_mode(ser, camera):
+def run_continuous_mode(ser, camera, reference_image):
     """Runs automatic pick-and-place cycles continuously."""
     print("Continuous automatic mode activated.")
     print("Press 'q' at any time to quit the program.")
     while True:
         try:
-            if perform_pick_and_place(ser, camera):
+            if perform_pick_and_place(ser, camera, reference_image):
                 print("Cycle complete. Waiting 10 seconds before next scan...")
                 time.sleep(10)
             else:
@@ -220,6 +203,20 @@ try:
         raise Exception("Camera not found")
     print("Camera initialized.")
     
+    # --- NEW: Capture the reference image of the empty tray ---
+    print("\n--- Initial Setup ---")
+    print("Please ensure the tray is EMPTY and clear of any objects.")
+    input("Press Enter to capture the reference image...")
+    
+    ret, reference_image = camera.read()
+    if not ret:
+        print("❌ Error: Failed to capture reference image.")
+        raise Exception("Reference image capture failed")
+    cv2.imshow("Reference Image Captured", reference_image)
+    cv2.waitKey(1000)
+    cv2.destroyAllWindows()
+    print("✅ Reference image of the empty tray captured successfully!")
+    
     while True:
         print("\n--- Main Menu ---")
         print("1. Manual Control")
@@ -232,9 +229,9 @@ try:
         if choice == '1':
             run_manual_mode(ser)
         elif choice == '2':
-            run_one_time_mode(ser, camera)
+            run_one_time_mode(ser, camera, reference_image)
         elif choice == '3':
-            run_continuous_mode(ser, camera)
+            run_continuous_mode(ser, camera, reference_image)
         elif choice == 'q':
             print("Exiting program.")
             break
