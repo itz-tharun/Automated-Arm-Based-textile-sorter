@@ -73,7 +73,7 @@ The Arduino firmware manages the low-level execution based on serial commands fr
 
 | File Name | Driver Type | Key Functionality | Notes |
 | :-------: | :------: | :-------: | :--------: |
-| [Basic_Control.ino](./Automated-Arm-Based-textile-sorter/Arduino%20arm%20control/Basic_Control.ino) | Relay-based | Initial implementation of time-based directional control. | Established core serial communication and individual motor commands. |
+| [Basic_Control.ino](./Arduino%20arm%20control/Basic_Control.ino) | Relay-based | Initial implementation of time-based directional control. | Established core serial communication and individual motor commands. |
 | [Updated_Control.ino](./Automated-Arm-Based-textile-sorter/Arduino%20arm%20control/Updated_Control.ino) | Relay-based | Introduced simultaneous X and Y motor control. | Optimized movement speed by allowing diagonal traversal. Still limited by relay lack of PWM. |
 | [BTS7960_Based_control.ino](./Automated-Arm-Based-textile-sorter/Arduino%20arm%20control/BTS7960_Based_control.ino) | BTS7960 (PWM) | Final, optimized code. Utilizes PWM for speed control (X-axis reduced speed). | Integrates robust, high-current drivers and includes simultaneous XY movement commands for the shortest possible cycle time.|
 
