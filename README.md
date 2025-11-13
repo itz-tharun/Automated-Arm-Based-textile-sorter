@@ -74,8 +74,8 @@ The Arduino firmware manages the low-level execution based on serial commands fr
 | File Name | Driver Type | Key Functionality | Notes |
 | :-------: | :------: | :-------: | :--------: |
 | [Basic_Control.ino](./Arduino%20arm%20control/Basic_Control.ino) | Relay-based | Initial implementation of time-based directional control. | Established core serial communication and individual motor commands. |
-| [Updated_Control.ino](./Automated-Arm-Based-textile-sorter/Arduino%20arm%20control/Updated_Control.ino) | Relay-based | Introduced simultaneous X and Y motor control. | Optimized movement speed by allowing diagonal traversal. Still limited by relay lack of PWM. |
-| [BTS7960_Based_control.ino](./Automated-Arm-Based-textile-sorter/Arduino%20arm%20control/BTS7960_Based_control.ino) | BTS7960 (PWM) | Final, optimized code. Utilizes PWM for speed control (X-axis reduced speed). | Integrates robust, high-current drivers and includes simultaneous XY movement commands for the shortest possible cycle time.|
+| [Updated_Control.ino](./Arduino%20arm%20control/Updated_Control.ino) | Relay-based | Introduced simultaneous X and Y motor control. | Optimized movement speed by allowing diagonal traversal. Still limited by relay lack of PWM. |
+| [BTS7960_Based_control.ino](./Arduino%20arm%20control/BTS7960_Based_control.ino) | BTS7960 (PWM) | Final, optimized code. Utilizes PWM for speed control (X-axis reduced speed). | Integrates robust, high-current drivers and includes simultaneous XY movement commands for the shortest possible cycle time.|
 
 # Algorithms Explored: Computer Vision Pipeline
 
@@ -83,7 +83,7 @@ The algorithmic exploration was crucial to fulfill the research mandate, focusin
 
 ## 1.Final Chosen Method
 
-### [Image Subtraction Detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/Image%20Subtraction%20Detection.py)
+### [Image Subtraction Detection.py](./Cloth%20detection%20Algorithms/Image%20Subtraction%20Detection.py)
 
 #### Method:
 Relies on the Subtraction Principle. It captures a static reference image of the empty tray, then calculates the absolute difference ($\text{cv2.absdiff}$) between the live frame and the reference image. The resulting pixels represent only the newly introduced cloth piece (the anomaly).
@@ -93,7 +93,7 @@ Highest computational efficiency and perfect dynamic fit for the "find the anoma
 
 ## 2.Explored and Discarded Methods
 
-### [White background detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/White%20background%20detection.py)
+### [White background detection.py](./Cloth%20detection%20Algorithms/White%20background%20detection.py)
 
 #### Method: 
 Used color thresholding to distinguish the cloth from a white tray background.
@@ -101,7 +101,7 @@ Used color thresholding to distinguish the cloth from a white tray background.
 #### Disadvantages: 
 Prone to error with white colored cloths.
 
-### [Canny edge detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/canny%20edge%20detection.py)
+### [Canny edge detection.py](./Cloth%20detection%20Algorithms/canny%20edge%20detection.py)
 
 #### Method:
 Detects abrupt changes in image intensity to find object boundaries.
@@ -109,7 +109,7 @@ Detects abrupt changes in image intensity to find object boundaries.
 #### Disadvantages:
 Highly sensitive to external factors like shadows and lighting inconsistencies, making it unstable.
 
-### [Green backdrop detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/Green%20backdrop%20detection.py)
+### [Green backdrop detection.py](./Cloth%20detection%20Algorithms/Green%20backdrop%20detection.py)
 
 #### Method:
 Utilizes Chroma Keying principles to isolate the object from a green background (intended for an underneath camera setup).
