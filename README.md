@@ -85,28 +85,34 @@ The algorithmic exploration was crucial to fulfill the research mandate, focusin
 
 ### [Image Subtraction Detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/Image%20Subtraction%20Detection.py)
 
-### Method:
+#### Method:
 Relies on the Subtraction Principle. It captures a static reference image of the empty tray, then calculates the absolute difference ($\text{cv2.absdiff}$) between the live frame and the reference image. The resulting pixels represent only the newly introduced cloth piece (the anomaly).
 
-### Advantages: 
+#### Advantages: 
 Highest computational efficiency and perfect dynamic fit for the "find the anomaly" application.
 
-5.2 Explored and Discarded Methods
+## 2.Explored and Discarded Methods
 
-White background detection.py
+### [White background detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/White%20background%20detection.py)
 
-Method: Used color thresholding to distinguish the cloth from a white tray background.
+#### Method: 
+Used color thresholding to distinguish the cloth from a white tray background.
 
-Disadvantages: Prone to error with varied cloth colors or inconsistent lighting.
+#### Disadvantages: 
+Prone to error with white colored cloths.
 
-canny edge detection.py
+### [Canny edge detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/canny%20edge%20detection.py)
 
-Method: Detects abrupt changes in image intensity to find object boundaries.
+#### Method:
+Detects abrupt changes in image intensity to find object boundaries.
 
-Disadvantages: Highly sensitive to external factors like shadows and lighting inconsistencies, making it unstable.
+#### Disadvantages:
+Highly sensitive to external factors like shadows and lighting inconsistencies, making it unstable.
 
-Green backdrop detection.py
+### [Green backdrop detection.py](./Automated-Arm-Based-textile-sorter/Cloth%20detection%20Algorithms/Green%20backdrop%20detection.py)
 
-Method: Utilizes Chroma Keying principles to isolate the object from a green background (intended for an underneath camera setup).
+#### Method:
+Utilizes Chroma Keying principles to isolate the object from a green background (intended for an underneath camera setup).
 
-Disadvantages: Impractical due to the mechanical difficulty of setting up the prototype rig.
+#### Disadvantages:
+Impractical due to the mechanical difficulty of setting up the prototype rig.
