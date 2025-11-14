@@ -130,8 +130,8 @@ This section details the critical utility programs used for image processing set
 | File Name | Purpose | Key Functionality |
 | :-------: | :------: | :-------: |
 | [Linear Regression Calibration Program.py](./Calibration%20and%20Testing/Linear%20Regression%20Calibration%20Program.py) | Calibration Core | Performs a linear calibration that maps pixel coordinates from the camera’s view to motor movement time values. It fits simple linear models for X and Y axes, translating image coordinates to open-loop actuation commands. |
-| [Coordinate detector for ROI definition and Calibration.py](./Calibration%20and%20Testing/Coordinate%20detector%20for%20ROI%20definition%20and%20Calibration.py) | ROI/Perspective Utility | Defines a Region of Interest (ROI) and applies a perspective transform to flatten the slanted camera view into an orthogonal (top-down) rectangular view for accurate measurement. This also helped secure stable reference points for the Linear Regression Calibration. |
-| [Camera_capture_test.py](./Calibration%20and%20Testing/Camera_capture_test.py) | Hardware Verification | A utility script used to test the USB camera connection, verify camera setup, and capture a single frame for quality check, serving as a foundation for integration. |
+| [ROI Definition & Perspective Flattening.py](./Calibration%20and%20Testing/ROI%20Definition%20&%20Perspective%20Flattening.py) | ROI/Perspective Utility | Defines a Region of Interest (ROI) and applies a perspective transform to flatten the slanted camera view into an orthogonal (top-down) rectangular view for accurate measurement. This also helped secure stable reference points for the Linear Regression Calibration. |
+| [Camera_capture_test.py](./Calibration%20and%20Testing/camera_capture_test.py) | Hardware Verification | A utility script used to test the USB camera connection, verify camera setup, and capture a single frame for quality check, serving as a foundation for integration. |
 
 <br>
 
@@ -143,7 +143,7 @@ This section outlines the structure of the final, autonomous system, detailing t
 | :-------: | :------: | :-------: |
 | [Main Python Program.py](./Final_Cloth_Sorting_Arm/Main%20Python%20Program.py) | Python | **THE FINAL PROGRAM:** Integrates the vision algorithm ( [Image Subtraction Detection](./Cloth%20detection%20Algorithms/Image%20Subtraction%20Detection.py) ), the serial communication library, the ROI flattening logic, and the Linear Regression Calibration model to execute the complete autonomous loop (Detect $\rightarrow$ Calculate Movement Time $\rightarrow$ Send Serial Command $\rightarrow$ Pick $\rightarrow$ Drop). |
 | [BTS7960_Based_control.ino](./Final_Cloth_Sorting_Arm/BTS7960_Based_control.ino) | Arduino C++ | **Arduino Controller Program:** Manages the low-level motor actuation using BTS7960 H-bridges and PWM for optimized speed, receiving serial commands from the [Main Python Program.py](./Final_Cloth_Sorting_Arm/Main%20Python%20Program.py) |
-| [Coordinate detector for ROI definition and Calibration.py](./Final_Cloth_Sorting_Arm/Coordinate%20detector%20for%20ROI%20definition%%20and%20Calibration.py) | Python | Used for generating the calibration parameters that are referenced by the main program. |
+| [Coordinate detector for ROI definition and Calibration.py](./Final_Cloth_Sorting_Arm/Coordinate%20detector%20for%20ROI%20definition%20and%20Calibration.py) | Python | Used for generating the calibration parameters that are referenced by the main program. |
 
 <br>
 
