@@ -67,6 +67,8 @@ Four different mounting configurations were systematically tested to determine t
 ### Final decision:
 The Elevated Side View was adopted as the optimal balance between visibility, accuracy, and practicality, requiring a robust software transformation layer to compensate for its inherent distortion.
 
+<br>
+
 # Hardware Code Explanation: Arduino Arm Control
 
 The Arduino firmware manages the low-level execution based on serial commands from the Python host. All commands follow a consistent format (e.g., X F 2.0) and are terminated by a newline.
@@ -76,6 +78,8 @@ The Arduino firmware manages the low-level execution based on serial commands fr
 | [Basic_Control.ino](./Arduino%20arm%20control/Basic_Control.ino) | Relay-based | Initial implementation of time-based directional control. | Established core serial communication and individual motor commands. |
 | [Updated_Control.ino](./Arduino%20arm%20control/Updated_Control.ino) | Relay-based | Introduced simultaneous X and Y motor control. | Optimized movement speed by allowing diagonal traversal. Still limited by relay lack of PWM. |
 | [BTS7960_Based_control.ino](./Arduino%20arm%20control/BTS7960_Based_control.ino) | BTS7960 (PWM) | Final, optimized code. Utilizes PWM for speed control (X-axis reduced speed). | Integrates robust, high-current drivers and includes simultaneous XY movement commands for the shortest possible cycle time.|
+
+<br> 
 
 # Algorithms Explored: Computer Vision Pipeline
 
@@ -116,3 +120,33 @@ Utilizes Chroma Keying principles to isolate the object from a green background 
 
 #### Disadvantages:
 Impractical due to the mechanical difficulty of setting up the prototype rig.
+
+<br>
+
+# Calibration and Utility Programs
+
+This section details the critical utility programs used for image processing setup, hardware verification, and the camera-to-arm transformation essential for open-loop control.
+
+| File Name | Purpose | Key Functionality |
+| :-------: | :------: | :-------: |
+| [Linear Regression Calibration Program.py](./Calibration%20and%20Testing/Linear%20Regression%20Calibration%20Program.py) | Calibration Core | Performs a linear calibration that maps pixel coordinates from the camera’s view to motor movement time values. It fits simple linear models for X and Y axes, translating image coordinates to open-loop actuation commands. |
+| [Coordinate detector for ROI definition and Calibration.py](./Calibration%20and%20Testing/Coordinate%20detector%20for%20ROI%20definition%20and%20Calibration.py) | ROI/Perspective Utility | Defines a Region of Interest (ROI) and applies a perspective transform to flatten the slanted camera view into an orthogonal (top-down) rectangular view for accurate measurement. This also helped secure stable reference points for the Linear Regression Calibration. |
+| [Camera_capture_test.py](./Calibration%20and%20Testing/Camera_capture_test.py) | Hardware Verification | A utility script used to test the USB camera connection, verify camera setup, and capture a single frame for quality check, serving as a foundation for integration. |
+
+<br>
+
+# Final Integrated System
+
+This section outlines the structure of the final, autonomous system, detailing the core files that combine the vision, calibration, and actuation components to perform the end-to-end cloth sorting task. The system was finalized in a folder named Final_Cloth_Sorting_Arm.
+
+| File Name | Language | Role in System |
+| :-------: | :------: | :-------: |
+| [Main Python Program.py](./Final_Cloth_Sorting_Arm/Main%20Python%20Program.py) | Python | **THE FINAL PROGRAM:** Integrates the vision algorithm ( [Image Subtraction Detection](./Cloth%20detection%20Algorithms/Image%20Subtraction%20Detection.py) ), the serial communication library, the ROI flattening logic, and the Linear Regression Calibration model to execute the complete autonomous loop (Detect $\rightarrow$ Calculate Movement Time $\rightarrow$ Send Serial Command $\rightarrow$ Pick $\rightarrow$ Drop). |
+| [BTS7960_Based_control.ino](./Final_Cloth_Sorting_Arm/BTS7960_Based_control.ino) | Arduino C++ | **Arduino Controller Program:** Manages the low-level motor actuation using BTS7960 H-bridges and PWM for optimized speed, receiving serial commands from the [Main Python Program.py](./Final_Cloth_Sorting_Arm/Main%20Python%20Program.py) |
+| [Coordinate detector for ROI definition and Calibration.py](./Final_Cloth_Sorting_Arm/Coordinate%20detector%20for%20ROI%20definition%%20and%20Calibration.py) | Python | Used for generating the calibration parameters that are referenced by the main program. |
+
+<br>
+
+# Conclusion
+
+The primary goal of devising an anomaly detection algorithm suitable for the given application was realized, and a proof-of-concept prototype was successfully designed and implemented using low-cost hardware. While the arm is only industrially viable when transitioned to a closed-loop system utilizing encoders and stepper motors (as detailed in Section 9), the primary objective was realized: to create a functional prototype and code base robust enough to validate the core software strategy and pool in enough funding to kick-start the industrial scaling phase of the project.
