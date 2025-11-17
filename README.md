@@ -90,14 +90,15 @@ The algorithmic exploration was crucial to fulfill the research mandate, focusin
 ### [Image Subtraction Detection.py](./Cloth%20detection%20Algorithms/Image%20Subtraction%20Detection.py)
 
 #### Method:
-Relies on the Subtraction Principle. It captures a static reference image of the empty tray, then calculates the absolute difference ($\text{cv2.absdiff}$) between the live frame and the reference image. The resulting pixels represent only the newly introduced cloth piece (the anomaly).
+Relies on the Subtraction Principle. It captures a static reference image of the empty tray, then calculates the absolute difference cv2.absdiff between the live frame and the reference image. The resulting pixels represent only the newly introduced cloth piece (the anomaly).
 
 #### Advantages: 
 Highest computational efficiency and perfect dynamic fit for the "find the anomaly" application.
 
+
 ## 2.Explored and Discarded Methods
 
-### [White background detection.py](./Cloth%20detection%20Algorithms/White%20background%20detection.py)
+### [Color based detection.py](./Cloth%20detection%20Algorithms/White%20background%20detection.py)
 
 #### Method: 
 Used color thresholding to distinguish the cloth from a white tray background.
@@ -123,7 +124,48 @@ Impractical due to the mechanical difficulty of setting up the prototype rig.
 
 <br>
 
+
 # Calibration and Utility Programs
+
+## Perspective Transformation and Region of Interest (ROI) Flattening
+
+Due to the adoption of the Elevated Side View for the camera, the image suffered from significant parallax and geometric distortion. This necessitated a critical software step to correct the image before calibration could be accurate.
+
+### Region of Interest (ROI) Definition:
+The utility program Coordinate detector for [ROI Definition & Perspective Flattening.py](./Calibration%20and%20Testing/ROI%20Definition%20&%20Perspective%20Flattening.py) was used to manually select the four physical corners of the tray in the distorted image. This ROI definition ensures:
+
+1. All detection algorithms only run within the tray area, eliminating false positives from the surrounding environment.
+
+2. The detection system remains robust even if the camera is bumped slightly, as the tray corners can be dynamically re-identified.
+
+<div align="center">
+    <img src="https://github.com/user-attachments/assets/d372c2ef-df13-4270-bb17-70fe11f041e4">
+</div>
+    <div align="center""> 
+      WITHOUT ROI DEFINITION(RUNNING COLOR BASED DETECTION)
+    </div>
+<br>
+
+<div align="center">
+    <img src="https://github.com/user-attachments/assets/ea8c9844-2a80-49ed-b3c3-e0fe80bff728">
+</div>
+    <div align="center""> 
+      WITH ROI DEFINITION(RUNNING COLOR BASED DETECTION)
+    </div>
+
+### Perspective Transformation:
+OpenCV's perspective transform functions (cv2.getPerspectiveTransform and cv2.warpPerspective) were applied. This process maps the four distorted tray corner coordinates to a new, fixed set of four rectangular corner coordinates.
+
+Result: This transformation effectively "flattens" the tilted image into an orthogonal, top-down view. This normalized image plane provides consistent and true X/Y coordinates for the Linear Regression Calibration model to rely upon, dramatically improving positional accuracy.
+
+<div align="center">
+    <img width="398" height="440" src="https://github.com/user-attachments/assets/12ed94a9-e496-4215-9b65-39453fdc6ffc">
+</div>
+    <div align="center""> 
+      AFTER PERSPECTIVE TRANSFORMATION
+    </div>
+
+## Utility Files Description
 
 This section details the critical utility programs used for image processing setup, hardware verification, and the camera-to-arm transformation essential for open-loop control.
 
@@ -133,7 +175,7 @@ This section details the critical utility programs used for image processing set
 | [ROI Definition & Perspective Flattening.py](./Calibration%20and%20Testing/ROI%20Definition%20&%20Perspective%20Flattening.py) | ROI/Perspective Utility | Defines a Region of Interest (ROI) and applies a perspective transform to flatten the slanted camera view into an orthogonal (top-down) rectangular view for accurate measurement. This also helped secure stable reference points for the Linear Regression Calibration. |
 | [Camera_capture_test.py](./Calibration%20and%20Testing/camera_capture_test.py) | Hardware Verification | A utility script used to test the USB camera connection, verify camera setup, and capture a single frame for quality check, serving as a foundation for integration. |
 
-<br>
+
 
 # Final Integrated System
 
