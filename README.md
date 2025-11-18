@@ -89,6 +89,12 @@ The algorithmic exploration was crucial to fulfill the research mandate, focusin
 
 ### [Image Subtraction Detection.py](./Cloth%20detection%20Algorithms/Image%20Subtraction%20Detection.py)
 
+<br>
+<div align="center">
+    <img width="398" height="440" src="https://github.com/user-attachments/assets/21ee4bc3-192f-460f-8163-00905f93c330">
+</div>
+<br>
+
 #### Method:
 Relies on the Subtraction Principle. It captures a static reference image of the empty tray, then calculates the absolute difference cv2.absdiff between the live frame and the reference image. The resulting pixels represent only the newly introduced cloth piece (the anomaly).
 
@@ -99,6 +105,11 @@ Highest computational efficiency and perfect dynamic fit for the "find the anoma
 ## 2.Explored and Discarded Methods
 
 ### [Color based detection.py](./Cloth%20detection%20Algorithms/White%20background%20detection.py)
+<br>
+<div align="center">
+    <img width="408" height="427" src="https://github.com/user-attachments/assets/9c76266c-4d9d-4f4e-8688-f01fdf5680c3">
+</div>
+<br>
 
 #### Method: 
 Used color thresholding to distinguish the cloth from a white tray background.
@@ -108,6 +119,12 @@ Prone to error with white colored cloths.
 
 ### [Canny edge detection.py](./Cloth%20detection%20Algorithms/canny%20edge%20detection.py)
 
+<br>
+<div align="center">
+    <img width="408" height="427" src="https://github.com/user-attachments/assets/7317130d-3176-4710-91ad-6b4f544cff67">
+</div>
+<br>
+
 #### Method:
 Detects abrupt changes in image intensity to find object boundaries.
 
@@ -115,6 +132,12 @@ Detects abrupt changes in image intensity to find object boundaries.
 Highly sensitive to external factors like shadows and lighting inconsistencies, making it unstable.
 
 ### [Green backdrop detection.py](./Cloth%20detection%20Algorithms/Green%20backdrop%20detection.py)
+
+<br>
+<div align="center">
+    <img width="381" height="309" alt="Image" src="https://github.com/user-attachments/assets/43a96a8c-907e-4d88-9e32-a399f8184fe1" />
+</div>
+<br>
 
 #### Method:
 Utilizes Chroma Keying principles to isolate the object from a green background (intended for an underneath camera setup).
