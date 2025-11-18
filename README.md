@@ -212,6 +212,13 @@ This section outlines the structure of the final, autonomous system, detailing t
 
 <br>
 
+# Output Demonstration
+<br>
+<div align="center">
+    <video src="https://github.com/user-attachments/assets/04274ed2-43bb-4f53-bfa8-51334a4608d5">
+</div>
+<br>
+
 # Conclusion
 
 The primary goal of devising an anomaly detection algorithm suitable for the given application was realized, and a proof-of-concept prototype was successfully designed and implemented using low-cost hardware. While the arm is only industrially viable when transitioned to a closed-loop system utilizing encoders and stepper motors, the primary objective was realized: to create a functional prototype and code base robust enough to validate the core software strategy and pool in enough funding to kick-start the industrial scaling phase of the project.
