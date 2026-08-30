@@ -219,6 +219,20 @@ This section outlines the structure of the final, autonomous system, detailing t
 </div>
 <br>
 
+# Research Extension
+
+The vision-based material classification component was subsequently
+investigated as a separate research study using a compact classical
+computer-vision feature representation.
+
+The extension evaluates geometric and photometric features using Decision
+Tree, Logistic Regression, and unsupervised K-Means analysis to examine
+both classification performance and the limitations of the feature space.
+
+The experimental implementation and analysis are maintained separately:
+
+**[Classical Vision for Textile Waste Sorting](https://github.com/itz-tharun/classical-vision-textile-waste-sorting)**
+
 # Conclusion
 
 The primary goal of devising an anomaly detection algorithm suitable for the given application was realized, and a proof-of-concept prototype was successfully designed and implemented using low-cost hardware. While the arm is only industrially viable when transitioned to a closed-loop system utilizing encoders and stepper motors, the primary objective was realized: to create a functional prototype and code base robust enough to validate the core software strategy and pool in enough funding to kick-start the industrial scaling phase of the project.
